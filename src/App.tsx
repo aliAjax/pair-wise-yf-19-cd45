@@ -1,126 +1,140 @@
+import { useMemo, useState } from "react";
 import "./styles.css";
+import { useSpecimenStore } from "./lib/useSpecimenStore";
+import { stageOf } from "./lib/utils";
+import { IntakeForm } from "./components/IntakeForm";
+import { Queue } from "./components/Queue";
+import { CabinetRecords, LocationCard } from "./components/CabinetRecords";
+import { SpecimenDetail } from "./components/SpecimenDetail";
 
-const project = {
-  "sourceNo": 9,
-  "id": "hxyfront-62007",
-  "port": 62007,
-  "title": "植物标本馆入库",
-  "domain": "植物标本馆",
-  "prompt": "开发一个植物标本馆压制标本入库前端项目，工作人员可以录入采集号、物种名称、采集地点、海拔、生境描述、采集人、压制状态、鉴定状态和馆藏位置。页面需要有入库队列、鉴定状态筛选、采集地点信息卡、馆藏柜位记录和单份标本详情页。",
-  "palette": [
-    "#166534",
-    "#0f766e",
-    "#ca8a04"
-  ],
-  "metrics": [
-    "入库队列",
-    "待鉴定",
-    "已上柜",
-    "采集点"
-  ],
-  "filters": [
-    "待压制",
-    "待鉴定",
-    "已入库",
-    "需补照"
-  ],
-  "fields": [
-    "采集号",
-    "物种名称",
-    "采集地点",
-    "海拔",
-    "生境描述",
-    "馆藏位置"
-  ],
-  "records": [
-    [
-      "HX-240615-01",
-      "槭属待定",
-      "海拔1420m",
-      "待鉴定"
-    ],
-    [
-      "HX-240615-08",
-      "蕨类",
-      "阴湿沟谷",
-      "已压制"
-    ],
-    [
-      "HX-240616-03",
-      "菊科",
-      "柜位B-12-04",
-      "已入库"
-    ]
-  ]
-};
+interface Toast {
+  id: number;
+  msg: string;
+  type: "ok" | "err";
+}
 
 function App() {
+  const store = useSpecimenStore();
+  const { specimens } = store;
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  const notify = (msg: string, type: "ok" | "err" = "ok") => {
+    const id = Date.now() + Math.random();
+    setToasts((t) => [...t, { id, msg, type }]);
+    window.setTimeout(() => {
+      setToasts((t) => t.filter((x) => x.id !== id));
+    }, 3200);
+  };
+
+  const metrics = useMemo(() => {
+    let waiting = 0;
+    let ready = 0;
+    let stored = 0;
+    for (const s of specimens) {
+      const stage = stageOf(s);
+      if (stage === "waiting") waiting += 1;
+      else if (stage === "ready") ready += 1;
+      else stored += 1;
+    }
+    const sites = new Set(
+      specimens.map((s) => s.location.trim()).filter(Boolean)
+    ).size;
+    return [
+      { label: "入库队列", value: specimens.length },
+      { label: "待处理（缺压制/鉴定）", value: waiting },
+      { label: "待上柜（可分配柜位）", value: ready },
+      { label: "已入库", value: stored },
+      { label: "采集点", value: sites },
+    ];
+  }, [specimens]);
+
+  const openSpecimen = openId
+    ? specimens.find((s) => s.id === openId) ?? null
+    : null;
+
+  const readyCount = metrics[2].value;
+
   return (
     <main className="app">
       <section className="hero">
-        <p>{project.id} · 源提示词{project.sourceNo} · Port {project.port}</p>
-        <h1>{project.title}</h1>
-        <span>{project.prompt}</span>
+        <p>植物标本馆 · 压制标本入库工作台</p>
+        <h1>标本入库办理台</h1>
+        <span>
+          录入采集号、物种、地点、海拔、生境、采集人与压制 / 鉴定状态；
+          <strong>压制完成且鉴定通过</strong>后才能分配柜位。
+          柜位占用互斥，未满足条件的记录保留在待处理队列并标明缺项，详情页保留历次变更。全部数据仅保存在本浏览器（localStorage）。
+        </span>
       </section>
 
       <section className="metrics">
-        {project.metrics.map((metric: string, index: number) => (
-          <article key={metric}>
-            <small>{metric}</small>
-            <strong>{[86, 14, 7, 32][index] ?? 12}</strong>
+        {metrics.map((m) => (
+          <article key={m.label}>
+            <small>{m.label}</small>
+            <strong>{m.value}</strong>
           </article>
         ))}
       </section>
 
-      <section className="workspace">
-        <aside className="panel">
-          <h2>{project.domain}筛选</h2>
-          <div className="chips">
-            {project.filters.map((item: string) => (
-              <button key={item}>{item}</button>
-            ))}
-          </div>
-        </aside>
-
-        <section className="panel form-panel">
-          <div className="heading">
-            <div>
-              <p>专业字段</p>
-              <h2>新增记录</h2>
-            </div>
-            <button className="primary">保存草稿</button>
-          </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
-        </section>
-      </section>
-
-      <section className="panel">
-        <div className="heading">
-          <div>
-            <p>历史记录</p>
-            <h2>近期工作台</h2>
-          </div>
-          <button>导出摘要</button>
+      <div className="workspace">
+        <div className="workspace-main">
+          <Queue specimens={specimens} onOpen={setOpenId} />
         </div>
-        <div className="records">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")}>
-              <b>{String(index + 1).padStart(2, "0")}</b>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
-              </div>
-            </article>
-          ))}
+        <div className="workspace-side">
+          <IntakeForm onSubmit={store.addSpecimen} />
         </div>
-      </section>
+      </div>
+
+      {readyCount > 0 && (
+        <p className="global-hint">
+          有 {readyCount} 份标本已满足上柜条件，请在队列中打开详情分配柜位。
+        </p>
+      )}
+
+      <div className="lower-grid">
+        <CabinetRecords specimens={specimens} onOpen={setOpenId} />
+        <LocationCard specimens={specimens} />
+      </div>
+
+      <footer className="page-foot">
+        <span>数据存储：浏览器 localStorage（键 herbarium-intake:v1），不上传服务器</span>
+        <button
+          onClick={() => {
+            if (window.confirm("确定清空当前数据并恢复演示记录？此操作不可撤销。")) {
+              store.resetAll();
+              notify("已恢复演示数据", "ok");
+            }
+          }}
+        >
+          重置为演示数据
+        </button>
+      </footer>
+
+      {openSpecimen && (
+        <SpecimenDetail
+          specimen={openSpecimen}
+          all={specimens}
+          actions={{
+            editField: store.editField,
+            setPress: store.setPress,
+            setIden: store.setIden,
+            assignCabinet: store.assignCabinet,
+            releaseCabinet: store.releaseCabinet,
+            removeSpecimen: store.removeSpecimen,
+          }}
+          onClose={() => setOpenId(null)}
+          onDeleted={() => setOpenId(null)}
+          notify={notify}
+        />
+      )}
+
+      <div className="toast-stack">
+        {toasts.map((t) => (
+          <div key={t.id} className={`toast ${t.type}`}>
+            {t.msg}
+          </div>
+        ))}
+      </div>
     </main>
   );
 }
